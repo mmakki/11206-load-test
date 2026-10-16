@@ -73,6 +73,19 @@ input[type=range]{width:100%;accent-color:var(--accent);height:32px;margin:0}
 .seg button.on.yes{background:var(--good);color:#fff}
 .seg button.on.no{background:var(--bad);color:#fff}
 .seg button:focus-visible,.tile:focus-visible,.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.picker{position:sticky;top:var(--hdr,58px);z-index:4;background:var(--bg);padding:8px 0 10px;margin:-8px 0 12px;display:grid;gap:10px}
+.picker input[type=search]{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:17px;-webkit-appearance:none}
+.picker input[type=search]:focus{outline:2px solid var(--accent);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:14px;font-weight:600;line-height:1.1;max-width:100%}
+.chip .ln{font-weight:400;color:var(--muted)}
+.chip.done{border-color:var(--good);background:color-mix(in srgb,var(--good) 14%,var(--panel))}
+.chip.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip.sel .ln{color:inherit;opacity:.7}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.picker .meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.picker .meta button{color:var(--accent);font-weight:600;font-size:13px;padding:4px 0}
+.empty{color:var(--muted);text-align:center;padding:28px 12px;font-size:15px}
 .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 .stat b{display:block;font-family:var(--display);font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -111,9 +124,10 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 (function(){
 const TUTORIALS=["Lucy","Herman","Kamyar","Vanessa","Annabel","Aman","Daniel","Mitchell","Fernando","Michelle","Sarah"];
 const ROSTER_URL="students.xlsx";
-const KEY_RESULTS="ics11206.results.v1", KEY_ROSTER="ics11206.roster.v1";
+const KEY_RESULTS="ics11206.results.v1", KEY_ROSTER="ics11206.roster.v1", KEY_EXTRA="ics11206.extra.v1";
 
-let roster=[];      // {id, first, last, tutor}
+let roster=[];      // {id, first, last, tutor} from students.xlsx
+let extra=[];       // {id, first, last, tutor} added from a tutorial page (shared via the API)
 let results={};     // id -> {w, c, b1, f2, ts}
 let rosterError="";
 let unmatched=0;
@@ -126,6 +140,7 @@ function load(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v
 function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 results=load(KEY_RESULTS,{});
 roster=load(KEY_ROSTER,[]);
+extra=load(KEY_EXTRA,[]);
 
 /* ---------- roster ---------- */
 function norm(s){ return String(s==null?"":s).trim(); }
@@ -188,7 +203,8 @@ async function pull(){
     const j=await res.json(); if(!j.ok) throw new Error(j.error||"error");
     // records deleted on the server disappear locally too (unless we still have a pending write)
     for(const id in results){ if(!(id in j.results)&&!pending[id]&&results[id].ts&&results[id].ts<Date.now()-15000){ delete results[id]; } }
-    const changed=mergeIn(j.results); save(KEY_RESULTS,results);
+    let changed=mergeIn(j.results); save(KEY_RESULTS,results);
+    if(Array.isArray(j.extra)){ const next=j.extra.filter(e=>e&&e.id&&TUTORIALS.includes(e.tutor)); if(JSON.stringify(next)!==JSON.stringify(extra)){ extra=next; save(KEY_EXTRA,extra); changed=true; } }
     if(!Object.keys(pending).length) setSync("ok","live");
     if(changed&&!document.activeElement.matches("input")) render();
   }catch(e){ setSync("off","offline, saved on phone"); }
@@ -206,17 +222,39 @@ async function flush(){
 function startPolling(){ clearInterval(pollTimer); const r=route(); const every=r.page==="compare"?8000:30000; pollTimer=setInterval(()=>{ if(document.visibilityState==="visible") pull(); },every); }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ pull(); flush(); } });
 window.addEventListener("online",()=>{ pull(); flush(); });
+async function addStudent(first,last,tutor){
+  first=norm(first); last=norm(last);
+  if(!first&&!last) { toast("Enter a name"); return false; }
+  const id=makeId(first,last,tutor);
+  if(allStudents().find(s=>s.id===id)){ toast("That name is already listed"); view.sel=id; return true; }
+  extra.push({id,first,last,tutor}); save(KEY_EXTRA,extra); view.sel=id;
+  if(apiAvailable){
+    try{ const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addStudent:{first,last,tutor}})});
+      const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"failed");
+      toast("Added "+(first+" "+last).trim()+" to "+tutor);
+    }catch(e){ toast("Added on this phone only (offline): "+e.message); }
+  } else toast("Added "+(first+" "+last).trim());
+  return true;
+}
+async function removeStudent(id){
+  extra=extra.filter(e=>e.id!==id); delete results[id]; delete pending[id]; save(KEY_EXTRA,extra); save(KEY_RESULTS,results); save(KEY_PENDING,pending);
+  if(view.sel===id) view.sel=null;
+  if(apiAvailable){ try{ await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({removeStudent:id})}); }catch(e){} }
+  toast("Removed"); render();
+}
 async function resetShared(key){
   try{ const res=await fetch(API,{method:"DELETE",headers:{"x-admin-key":key}}); const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"refused");
     results={}; pending={}; save(KEY_RESULTS,results); save(KEY_PENDING,pending); toast("Shared data reset"); render(); }
   catch(e){ toast("Reset refused: "+e.message); }
 }
-function isLogged(r){ return r&&(r.w!=null||r.c!=null||r.b1!=null||r.f2!=null); }
-function studentsOf(t){ return roster.filter(s=>s.tutor===t); }
+function isLogged(r){ return r&&(r.w!=null||r.c!=null||r.b1!=null||r.f2!=null); } // has any data (storage)
+function isDone(r){ return !!r&&r.w!=null&&!isNaN(r.w)&&r.c!=null; }                 // counts as logged: weight AND creativity
+function studentsOf(t){ return roster.concat(extra.filter(e=>!roster.find(s=>s.id===e.id))).filter(s=>s.tutor===t); }
+function allStudents(){ return roster.concat(extra.filter(e=>!roster.find(s=>s.id===e.id))); }
 function fmt(n,d){ return n==null||isNaN(n)?"–":Number(n).toFixed(d==null?0:d); }
 function summary(t){
   const ss=studentsOf(t), rs=ss.map(s=>get(s.id));
-  const logged=rs.filter(isLogged);
+  const logged=rs.filter(isDone);
   const ws=rs.map(r=>r.w).filter(v=>v!=null&&!isNaN(v));
   const cs=rs.map(r=>r.c).filter(v=>v!=null);
   const b1=rs.filter(r=>r.b1!=null), f2=rs.filter(r=>r.f2!=null);
@@ -240,8 +278,16 @@ function exportXlsx(){
   XLSX.writeFile(wb,"11206-load-test-"+stamp+".xlsx");
 }
 function r1(v){ return v==null?"":Math.round(v*10)/10; }
+let importKey="";
+function confirmImport(){
+  const keyIn=el("input",{type:"password",placeholder:"Admin key",autocomplete:"off",id:"importKey"});
+  const box=el("div",{class:"confirm"},["Importing overwrites shared results with the rows in the exported file (newest entry wins). Enter the admin key, then choose the file.",
+    el("div",{class:"field"},[keyIn]),
+    el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn primary",onclick:()=>{importKey=keyIn.value;if(!importKey){toast("Enter the admin key first");return;}$("#importFile").click();}},["Choose file"]),el("button",{class:"btn",onclick:render},["Cancel"])])]);
+  main.insertBefore(box,main.firstChild); keyIn.focus();
+}
 $("#importFile").addEventListener("change",async ev=>{
-  let merged=0, files=[...ev.target.files];
+  let merged=0, files=[...ev.target.files]; const imported={};
   for(const f of files){
     try{
       const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
@@ -255,14 +301,22 @@ $("#importFile").addEventListener("change",async ev=>{
         if(!isLogged(inc)) continue;
         const ts=upd?Date.parse(upd)||Date.now():Date.now();
         const cur=get(id);
-        if(!cur.ts||ts>=cur.ts){ results[id]=Object.assign(inc,{ts}); pending[id]=true; merged++; }
-        if(!roster.find(s=>s.id===id)&&TUTORIALS.includes(t)){ roster.push({id,first:norm(first),last:norm(last),tutor:t}); }
+        if(!cur.ts||ts>=cur.ts){ results[id]=Object.assign(inc,{ts}); imported[id]=results[id]; merged++; }
+        if(!allStudents().find(s=>s.id===id)&&TUTORIALS.includes(t)){ extra.push({id,first:norm(first),last:norm(last),tutor:t}); }
       }
     }catch(e){ toast("Could not read "+f.name); }
   }
-  save(KEY_RESULTS,results); save(KEY_ROSTER,roster); save(KEY_PENDING,pending); flush();
-  toast("Merged "+merged+" records from "+files.length+" file"+(files.length===1?"":"s"));
-  ev.target.value=""; render();
+  save(KEY_RESULTS,results); save(KEY_ROSTER,roster);
+  ev.target.value="";
+  if(!merged){ toast("Nothing to import"); render(); return; }
+  if(apiAvailable){
+    setSync("busy","importing");
+    try{ const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","x-admin-key":importKey},body:JSON.stringify({records:imported,import:true})});
+      const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"refused");
+      toast("Imported "+merged+" records and synced to everyone"); setSync("ok","live");
+    }catch(e){ toast("Import refused: "+e.message); setSync("ok","live"); pull(); }
+  } else toast("Merged "+merged+" records on this phone");
+  importKey=""; render();
 });
 
 /* ---------- routing ---------- */
@@ -280,9 +334,10 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("sh
 
 /* ---------- pages ---------- */
 function render(){
-  const r=route();
+  const r=route(), navigated=render._last!==location.hash;
+  if(navigated){ render._last=location.hash; view.sel=null; view.q=""; view.all=false; }
   if(r.page==="tutorial") renderTutorial(r.tutor); else if(r.page==="compare") renderCompare(); else renderHome();
-  if(render._last!==location.hash){ render._last=location.hash; window.scrollTo(0,0); pull(); startPolling(); }
+  if(navigated){ window.scrollTo(0,0); pull(); startPolling(); }
 }
 function rosterNotice(){
   const out=[];
@@ -292,9 +347,9 @@ function rosterNotice(){
   return out;
 }
 function renderHome(){
-  header("11206 Load Test","Introduction to Construction & Structural Synthesis",false,{label:"Export",fn:exportXlsx});
+  header("11206 Load Test","Introduction to Construction & Structural Synthesis",false,null);
   main.replaceChildren(...rosterNotice());
-  const total=roster.length, logged=roster.filter(s=>isLogged(get(s.id))).length;
+  const total=allStudents().length, logged=allStudents().filter(s=>isDone(get(s.id))).length;
   const grid=el("div",{class:"grid"});
   grid.appendChild(el("button",{class:"tile wide",onclick:()=>{location.hash="compare";}},[el("div",{class:"n",text:"Compare all tutorials"}),el("div",{class:"p",text:logged+" of "+total+" models logged"})]));
   TUTORIALS.forEach(t=>{ const m=summary(t); const pct=m.n?100*m.logged/m.n:0;
@@ -305,8 +360,7 @@ function renderHome(){
   main.appendChild(el("div",{class:"sec",text:"Data"}));
   main.appendChild(el("div",{class:"toolbar"},[
     el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"]),
-    el("button",{class:"btn",onclick:()=>$("#importFile").click()},["Import results files"]),
-    el("button",{class:"btn",onclick:()=>$("#rosterFile").click()},["Reload student list"]),
+    el("button",{class:"btn",onclick:confirmImport},["Import results file"]),
     el("button",{class:"btn danger",onclick:confirmClear},["Reset all shared data"])
   ]));
   main.appendChild(el("p",{style:"font-size:13px;color:var(--muted)"},[apiAvailable?"Entries sync live to everyone with this link. If the phone goes offline, they're kept locally and sent when it reconnects.":"This copy is running without the sync API, so results stay on this phone. Export and import files to combine them."]));
@@ -318,17 +372,62 @@ function confirmClear(){
     el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn danger",onclick:()=>resetShared(keyIn.value)},["Yes, reset everything"]),el("button",{class:"btn",onclick:render},["Cancel"])])]);
   main.insertBefore(box,main.firstChild); keyIn.focus();
 }
+const view={sel:null,q:"",all:false};
 function renderTutorial(t){
-  const ss=studentsOf(t), logged=ss.filter(s=>isLogged(get(s.id))).length;
+  const ss=studentsOf(t).slice().sort((a,b)=>(a.first+" "+a.last).localeCompare(b.first+" "+b.last));
+  const logged=ss.filter(s=>isDone(get(s.id))).length;
   header(t+"'s tutorial",logged+" of "+ss.length+" logged",true,{label:"Export",fn:exportXlsx});
   main.replaceChildren(...rosterNotice());
-  if(!ss.length&&roster.length) main.appendChild(el("div",{class:"notice"},["No students listed for "+t+" in students.xlsx."]));
-  ss.forEach((s,i)=>main.appendChild(studentCard(s,i+1)));
+  if(!ss.length){ if(roster.length) main.appendChild(el("div",{class:"notice"},["No students listed for "+t+" in students.xlsx."])); return; }
+  if(view.sel&&!ss.find(s=>s.id===view.sel)) view.sel=null;
+  document.documentElement.style.setProperty("--hdr",hdr.offsetHeight+"px");
+  // search + chips
+  const q=el("input",{type:"search",placeholder:"Type a name…",id:"q-"+t,autocomplete:"off",autocorrect:"off",spellcheck:"false","aria-label":"Find student"});
+  q.value=view.q;
+  const chips=el("div",{class:"chips"});
+  const body=el("div",{id:"body"});
+  const meta=el("div",{class:"meta"});
+  function match(s){ const k=view.q.trim().toLowerCase(); return !k||(s.first+" "+s.last).toLowerCase().includes(k)||s.last.toLowerCase().startsWith(k); }
+  function drawChips(){
+    chips.replaceChildren();
+    const vis=ss.filter(match);
+    vis.forEach(s=>{ const r=get(s.id);
+      chips.appendChild(el("button",{class:"chip"+(isDone(r)?" done":"")+(view.sel===s.id?" sel":""),type:"button",onclick:()=>{view.sel=view.sel===s.id?null:s.id;view.all=false;drawChips();drawBody();}},[s.first+" ",el("span",{class:"ln",text:s.last})]));
+    });
+    if(!vis.length) chips.appendChild(el("span",{class:"empty",style:"padding:6px 0",text:"No one matches"}));
+    const left=ss.length-ss.filter(s=>isDone(get(s.id))).length;
+    meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"}),
+      el("span",{style:"display:flex;gap:14px"},[
+        el("button",{type:"button",onclick:showAddForm},["+ Add student"]),
+        el("button",{type:"button",onclick:()=>{view.all=!view.all;view.sel=null;drawChips();drawBody();}},[view.all?"Hide list":"Show all as list"])]));
+  }
+  function showAddForm(){
+    body.replaceChildren();
+    const f=el("input",{type:"text",placeholder:"First name",id:"add-first",autocomplete:"off",autocapitalize:"words"}), l=el("input",{type:"text",placeholder:"Last name",id:"add-last",autocomplete:"off",autocapitalize:"words"});
+    async function go(){ if(await addStudent(f.value,l.value,t)) renderTutorial(t); }
+    l.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+    body.appendChild(el("div",{class:"confirm"},["Add a student who is missing from "+t+"'s list. They'll appear on every phone and in the export.",
+      el("div",{class:"row"},[el("div",{class:"field"},[f]),el("div",{class:"field"},[l])]),
+      el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn primary",onclick:go},["Add"]),el("button",{class:"btn",onclick:drawBody},["Cancel"])])]));
+    f.focus();
+  }
+  function drawBody(){
+    body.replaceChildren();
+    if(view.all){ ss.filter(match).forEach((s,i)=>body.appendChild(studentCard(s,i+1,drawChips))); return; }
+    const s=ss.find(x=>x.id===view.sel);
+    if(s) body.appendChild(studentCard(s,ss.indexOf(s)+1,drawChips));
+    else body.appendChild(el("div",{class:"empty",text:"Tap the student who is presenting."}));
+  }
+  q.addEventListener("input",()=>{ view.q=q.value; const vis=ss.filter(match); if(vis.length===1){ view.sel=vis[0].id; } drawChips(); drawBody(); });
+  main.appendChild(el("div",{class:"picker"},[q,chips,meta]));
+  main.appendChild(body);
+  drawChips(); drawBody();
 }
-function studentCard(s,i){
+function studentCard(s,i,onChange){
   const r=get(s.id);
-  const card=el("div",{class:"card"+(isLogged(r)?" done":"")});
-  card.appendChild(el("div",{class:"name"},[el("h3",{text:s.first+" "+s.last}),el("span",{class:"idx",text:"#"+i})]));
+  const card=el("div",{class:"card"+(isDone(r)?" done":"")});
+  const added=!roster.find(x=>x.id===s.id);
+  card.appendChild(el("div",{class:"name"},[el("h3",{text:(s.first+" "+s.last).trim()}),added?el("button",{class:"idx",type:"button",style:"color:var(--bad)",onclick:()=>removeStudent(s.id)},["added · remove"]):el("span",{class:"idx",text:"#"+i})]));
   // weight + creativity
   const wIn=el("input",{type:"number",inputmode:"decimal",step:"1",min:"0",placeholder:"grams",id:"w-"+cssId(s.id)});
   if(r.w!=null) wIn.value=r.w;
@@ -341,7 +440,7 @@ function studentCard(s,i){
   card.appendChild(el("div",{class:"field"},[el("label",{text:"Creativity 0–10"}),el("div",{class:"slider"},[sl,out])]));
   // yes / no
   card.appendChild(el("div",{class:"row"},[segField(s.id,"b1","Carried 1 brick",r.b1,mark),segField(s.id,"f2","Failed under 2 bricks",r.f2,mark)]));
-  function mark(){ card.classList.toggle("done",isLogged(get(s.id))); const n=studentsOf(s.tutor).filter(x=>isLogged(get(x.id))).length; hdr.querySelector("small").firstChild.textContent=n+" of "+studentsOf(s.tutor).length+" logged · "; }
+  function mark(){ card.classList.toggle("done",isDone(get(s.id))); const n=studentsOf(s.tutor).filter(x=>isDone(get(x.id))).length; hdr.querySelector("small").firstChild.textContent=n+" of "+studentsOf(s.tutor).length+" logged · "; if(onChange) onChange(); }
   return card;
 }
 function cssId(id){ return id.replace(/[^a-z0-9]+/gi,"-"); }
@@ -352,14 +451,14 @@ function segField(id,key,label,val,after){
   return el("div",{class:"field"},[el("label",{text:label}),el("div",{class:"seg",role:"group","aria-label":label},[y,n])]);
 }
 function renderCompare(){
-  header("All tutorials","Comparison",true,{label:"Export",fn:exportXlsx});
+  header("All tutorials","Comparison",true,null);
   main.replaceChildren(...rosterNotice());
   const ms=TUTORIALS.map(summary);
-  const all=roster.map(s=>get(s.id)), logged=all.filter(isLogged);
+  const all=allStudents().map(s=>get(s.id)), logged=all.filter(isDone);
   const ws=all.map(r=>r.w).filter(v=>v!=null&&!isNaN(v));
   const b1=all.filter(r=>r.b1!=null), f2=all.filter(r=>r.f2!=null);
   main.appendChild(el("div",{class:"stats"},[
-    stat(logged.length+" / "+roster.length,"models logged"),
+    stat(logged.length+" / "+allStudents().length,"models logged"),
     stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0)/ws.length,0)+" g":"–","average weight"),
     stat(b1.length?fmt(100*b1.filter(r=>r.b1).length/b1.length,0)+"%":"–","carried 1 brick"),
     stat(f2.length?fmt(100*f2.filter(r=>r.f2).length/f2.length,0)+"%":"–","failed under 2")
@@ -372,14 +471,14 @@ function renderCompare(){
   main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
   main.appendChild(el("div",{class:"tscroll"},[tbl]));
   // lightest models that carried one brick
-  const champs=roster.map(s=>({s,r:get(s.id)})).filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
+  const champs=allStudents().map(s=>({s,r:get(s.id)})).filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
   if(champs.length){
     main.appendChild(el("div",{class:"sec",text:"Lightest models that carried a brick"}));
     const t2=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"Model"}),el("th",{text:"Tutorial"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"}),el("th",{text:"Survived 2"})])]),
       el("tbody",{},champs.map(x=>el("tr",{},[el("td",{text:x.s.first+" "+x.s.last}),el("td",{text:x.s.tutor}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:x.r.f2==null?"–":(x.r.f2?"No":"Yes")})])))]);
     main.appendChild(el("div",{class:"tscroll"},[t2]));
   }
-  main.appendChild(el("div",{class:"toolbar"},[el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"]),el("button",{class:"btn",onclick:()=>$("#importFile").click()},["Import results files"])]));
+  main.appendChild(el("div",{class:"toolbar"},[el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"])]));
 }
 function stat(v,l){ return el("div",{class:"stat"},[el("b",{text:v}),el("span",{text:l})]); }
 function barChart(title,items,max){
