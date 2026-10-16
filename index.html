@@ -55,7 +55,8 @@ main{padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(saf
 .tile.wide .p{color:inherit;opacity:.75}
 .sec{margin:22px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-family:var(--body);font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;display:grid;gap:12px}
-.card.done{border-left:4px solid var(--good)}
+.card.done{background:color-mix(in srgb,var(--good) 12%,var(--panel));border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+@supports not (background:color-mix(in srgb,red 10%,white)){ .card.done{background:#e9f4ec;border-color:#9ccfae} :root[data-theme="dark"] .card.done{background:#1f2e24} }
 .card .name{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .card .name h3{font-size:20px}
 .card .name .idx{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
@@ -73,16 +74,21 @@ input[type=range]{width:100%;accent-color:var(--accent);height:32px;margin:0}
 .seg button.on.yes{background:var(--good);color:#fff}
 .seg button.on.no{background:var(--bad);color:#fff}
 .seg button:focus-visible,.tile:focus-visible,.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.picker{position:sticky;top:var(--hdr,58px);z-index:4;background:var(--bg);padding:8px 0 10px;margin:-8px 0 12px;display:grid;gap:10px}
-.picker input[type=search]{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:17px;-webkit-appearance:none}
-.picker input[type=search]:focus{outline:2px solid var(--accent);outline-offset:1px}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:14px;font-weight:600;line-height:1.1;max-width:100%}
-.chip .ln{font-weight:400;color:var(--muted)}
-.chip.done{border-color:var(--good);background:color-mix(in srgb,var(--good) 14%,var(--panel))}
-.chip.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.chip.sel .ln{color:inherit;opacity:.7}
-.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.picker{position:sticky;top:var(--hdr,58px);z-index:4;background:var(--bg);padding:8px 0 10px;margin:-8px 0 12px;display:grid;gap:8px}
+.searchrow{display:grid;grid-template-columns:1fr auto;gap:8px;position:relative}
+.searchwrap{position:relative;min-width:0}
+.searchwrap input[type=search]{width:100%;padding:11px 36px 11px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:17px;-webkit-appearance:none}
+.searchwrap input[type=search]:focus{outline:2px solid var(--accent);outline-offset:1px}
+.searchwrap input[type=search]::-webkit-search-cancel-button{display:none}
+.searchwrap .clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:20px;line-height:1;padding:6px 8px;color:var(--muted)}
+.dd{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:min(52vh,360px);overflow-y:auto;z-index:6}
+.dd button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;font-size:16px;border-bottom:1px solid var(--line)}
+.dd button:last-child{border-bottom:0}
+.dd button:active,.dd button.hl{background:var(--soft)}
+.dd .dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none}
+.dd .dot.done{background:var(--good)}
+.dd .ln{color:var(--muted)}
+.addbtn{border:1px solid var(--line);border-radius:6px;background:var(--panel);font-weight:600;font-size:15px;padding:0 14px;white-space:nowrap}
 .picker .meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
 .picker .meta button{color:var(--accent);font-weight:600;font-size:13px;padding:4px 0}
 .empty{color:var(--muted);text-align:center;padding:28px 12px;font-size:15px}
@@ -335,7 +341,7 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("sh
 /* ---------- pages ---------- */
 function render(){
   const r=route(), navigated=render._last!==location.hash;
-  if(navigated){ render._last=location.hash; view.sel=null; view.q=""; view.all=false; }
+  if(navigated){ render._last=location.hash; view.sel=null; view.q=""; }
   if(r.page==="tutorial") renderTutorial(r.tutor); else if(r.page==="compare") renderCompare(); else renderHome();
   if(navigated){ window.scrollTo(0,0); pull(); startPolling(); }
 }
@@ -372,7 +378,7 @@ function confirmClear(){
     el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn danger",onclick:()=>resetShared(keyIn.value)},["Yes, reset everything"]),el("button",{class:"btn",onclick:render},["Cancel"])])]);
   main.insertBefore(box,main.firstChild); keyIn.focus();
 }
-const view={sel:null,q:"",all:false};
+const view={sel:null,q:""};
 function renderTutorial(t){
   const ss=studentsOf(t).slice().sort((a,b)=>(a.first+" "+a.last).localeCompare(b.first+" "+b.last));
   const logged=ss.filter(s=>isDone(get(s.id))).length;
@@ -381,26 +387,35 @@ function renderTutorial(t){
   if(!ss.length){ if(roster.length) main.appendChild(el("div",{class:"notice"},["No students listed for "+t+" in students.xlsx."])); return; }
   if(view.sel&&!ss.find(s=>s.id===view.sel)) view.sel=null;
   document.documentElement.style.setProperty("--hdr",hdr.offsetHeight+"px");
-  // search + chips
-  const q=el("input",{type:"search",placeholder:"Type a name…",id:"q-"+t,autocomplete:"off",autocorrect:"off",spellcheck:"false","aria-label":"Find student"});
-  q.value=view.q;
-  const chips=el("div",{class:"chips"});
+  const q=el("input",{type:"search",placeholder:"Search or pick a student…",id:"q-"+t,autocomplete:"off",autocorrect:"off",spellcheck:"false","aria-label":"Find student",role:"combobox"});
+  const clear=el("button",{class:"clear",type:"button","aria-label":"Clear",onclick:()=>{view.sel=null;view.q="";q.value="";closeDd();drawBody();q.focus();}},["×"]);
+  const dd=el("div",{class:"dd",role:"listbox"}); dd.hidden=true;
+  const wrap=el("div",{class:"searchwrap"},[q,clear,dd]);
   const body=el("div",{id:"body"});
   const meta=el("div",{class:"meta"});
+  const selected=()=>ss.find(x=>x.id===view.sel);
   function match(s){ const k=view.q.trim().toLowerCase(); return !k||(s.first+" "+s.last).toLowerCase().includes(k)||s.last.toLowerCase().startsWith(k); }
-  function drawChips(){
-    chips.replaceChildren();
-    const vis=ss.filter(match);
-    vis.forEach(s=>{ const r=get(s.id);
-      chips.appendChild(el("button",{class:"chip"+(isDone(r)?" done":"")+(view.sel===s.id?" sel":""),type:"button",onclick:()=>{view.sel=view.sel===s.id?null:s.id;view.all=false;drawChips();drawBody();}},[s.first+" ",el("span",{class:"ln",text:s.last})]));
-    });
-    if(!vis.length) chips.appendChild(el("span",{class:"empty",style:"padding:6px 0",text:"No one matches"}));
-    const left=ss.length-ss.filter(s=>isDone(get(s.id))).length;
-    meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"}),
-      el("span",{style:"display:flex;gap:14px"},[
-        el("button",{type:"button",onclick:showAddForm},["+ Add student"]),
-        el("button",{type:"button",onclick:()=>{view.all=!view.all;view.sel=null;drawChips();drawBody();}},[view.all?"Hide list":"Show all as list"])]));
+  function nameOf(s){ return (s.first+" "+s.last).trim(); }
+  function syncInput(){ const s=selected(); q.value=s?nameOf(s):view.q; clear.hidden=!q.value; }
+  function openDd(){ dd.replaceChildren();
+    const list=selected()?ss:ss.filter(match);
+    list.forEach(s=>dd.appendChild(el("button",{type:"button",role:"option",onmousedown:e=>e.preventDefault(),onclick:()=>{view.sel=s.id;view.q="";closeDd();syncInput();drawBody();q.blur();}},[el("span",{class:"dot"+(isDone(get(s.id))?" done":"")}),s.first+" ",el("span",{class:"ln",text:s.last})])));
+    if(!list.length) dd.appendChild(el("button",{type:"button",disabled:"",style:"color:var(--muted)"},["No one matches"]));
+    dd.hidden=false; }
+  function closeDd(){ dd.hidden=true; }
+  function drawMeta(){ const left=ss.length-ss.filter(s=>isDone(get(s.id))).length; meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"})); }
+  function drawBody(){
+    body.replaceChildren(); drawMeta();
+    const s=selected();
+    const list=s?[s]:ss.filter(match);
+    list.forEach(x=>body.appendChild(studentCard(x,ss.indexOf(x)+1,drawMeta)));
+    if(!list.length) body.appendChild(el("div",{class:"empty",text:"No one matches. Check the spelling or add the student."}));
   }
+  q.addEventListener("focus",()=>{ if(selected()){ q.select(); } openDd(); });
+  q.addEventListener("input",()=>{ view.sel=null; view.q=q.value; clear.hidden=!q.value; openDd(); drawBody(); });
+  q.addEventListener("keydown",e=>{ if(e.key==="Enter"){ const vis=ss.filter(match); if(vis.length===1){ view.sel=vis[0].id; view.q=""; syncInput(); drawBody(); } closeDd(); q.blur(); } if(e.key==="Escape"){ closeDd(); q.blur(); } });
+  q.addEventListener("blur",()=>setTimeout(closeDd,150));
+  const addBtn=el("button",{class:"addbtn",type:"button",onclick:showAddForm},["+ Add"]);
   function showAddForm(){
     body.replaceChildren();
     const f=el("input",{type:"text",placeholder:"First name",id:"add-first",autocomplete:"off",autocapitalize:"words"}), l=el("input",{type:"text",placeholder:"Last name",id:"add-last",autocomplete:"off",autocapitalize:"words"});
@@ -411,17 +426,9 @@ function renderTutorial(t){
       el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn primary",onclick:go},["Add"]),el("button",{class:"btn",onclick:drawBody},["Cancel"])])]));
     f.focus();
   }
-  function drawBody(){
-    body.replaceChildren();
-    if(view.all){ ss.filter(match).forEach((s,i)=>body.appendChild(studentCard(s,i+1,drawChips))); return; }
-    const s=ss.find(x=>x.id===view.sel);
-    if(s) body.appendChild(studentCard(s,ss.indexOf(s)+1,drawChips));
-    else body.appendChild(el("div",{class:"empty",text:"Tap the student who is presenting."}));
-  }
-  q.addEventListener("input",()=>{ view.q=q.value; const vis=ss.filter(match); if(vis.length===1){ view.sel=vis[0].id; } drawChips(); drawBody(); });
-  main.appendChild(el("div",{class:"picker"},[q,chips,meta]));
+  main.appendChild(el("div",{class:"picker"},[el("div",{class:"searchrow"},[wrap,addBtn]),meta]));
   main.appendChild(body);
-  drawChips(); drawBody();
+  syncInput(); drawBody();
 }
 function studentCard(s,i,onChange){
   const r=get(s.id);
