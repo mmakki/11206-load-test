@@ -210,13 +210,14 @@ async function pull(){
     // records deleted on the server disappear locally too (unless we still have a pending write)
     for(const id in results){ if(!(id in j.results)&&!pending[id]&&results[id].ts&&results[id].ts<Date.now()-15000){ delete results[id]; } }
     let changed=mergeIn(j.results); save(KEY_RESULTS,results);
-    if(Array.isArray(j.extra)){ const next=j.extra.filter(e=>e&&e.id&&TUTORIALS.includes(e.tutor)); if(JSON.stringify(next)!==JSON.stringify(extra)){ extra=next; save(KEY_EXTRA,extra); changed=true; } }
+    if(Array.isArray(j.extra)){ const next=j.extra.filter(e=>e&&e.id&&TUTORIALS.includes(e.tutor)).concat(extra.filter(e=>e.pending&&!j.extra.find(x=>x.id===e.id))); if(JSON.stringify(next)!==JSON.stringify(extra)){ extra=next; save(KEY_EXTRA,extra); changed=true; } }
     if(!Object.keys(pending).length) setSync("ok","live");
     if(changed&&!document.activeElement.matches("input")) render();
   }catch(e){ setSync("off","offline, saved on phone"); }
 }
 function queuePush(id){ pending[id]=true; save(KEY_PENDING,pending); setSync("busy","saving"); clearTimeout(pushTimer); pushTimer=setTimeout(flush,500); }
 async function flush(){
+  if(apiAvailable) flushExtras();
   if(!apiAvailable){ pending={}; save(KEY_PENDING,pending); setSync("off","no sync (static)"); return; }
   const ids=Object.keys(pending); if(!ids.length){ setSync("ok","live"); return; }
   const records={}; ids.forEach(id=>records[id]=get(id));
@@ -233,15 +234,21 @@ async function addStudent(first,last,tutor){
   if(!first&&!last) { toast("Enter a name"); return false; }
   const id=makeId(first,last,tutor);
   if(allStudents().find(s=>s.id===id)){ toast("That name is already listed"); view.sel=id; return true; }
-  extra.push({id,first,last,tutor}); save(KEY_EXTRA,extra); view.sel=id;
+  extra.push({id,first,last,tutor,pending:true}); save(KEY_EXTRA,extra); view.sel=id;
   if(apiAvailable){
-    try{ const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addStudent:{first,last,tutor}})});
-      const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"failed");
-      toast("Added "+(first+" "+last).trim()+" to "+tutor);
-    }catch(e){ toast("Added on this phone only (offline): "+e.message); }
+    if(await pushExtra(id)) toast("Added "+(first+" "+last).trim()+" to "+tutor);
+    else toast("Added on this phone; will sync when the server is reachable");
   } else toast("Added "+(first+" "+last).trim());
   return true;
 }
+async function pushExtra(id){
+  const e=extra.find(x=>x.id===id); if(!e) return false;
+  try{ const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addStudent:{first:e.first,last:e.last,tutor:e.tutor}})});
+    const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"failed");
+    delete e.pending; save(KEY_EXTRA,extra); return true;
+  }catch(err){ return false; }
+}
+async function flushExtras(){ for(const e of extra.filter(x=>x.pending)) await pushExtra(e.id); }
 async function removeStudent(id){
   extra=extra.filter(e=>e.id!==id); delete results[id]; delete pending[id]; save(KEY_EXTRA,extra); save(KEY_RESULTS,results); save(KEY_PENDING,pending);
   if(view.sel===id) view.sel=null;
@@ -495,7 +502,7 @@ function barChart(title,items,max){
 
 render();
 fetchRoster();
-if(Object.keys(pending).length) flush();
+if(Object.keys(pending).length||extra.some(e=>e.pending)) flush();
 })();
 </script>
 </body>
