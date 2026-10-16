@@ -100,6 +100,11 @@ table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:ta
 th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+th.sortable{cursor:pointer;user-select:none;-webkit-user-select:none}
+th.sortable.on{color:var(--accent)}
+th.sortable::after{content:" ↕";opacity:.4}
+th.sortable.on.asc::after{content:" ↑";opacity:1}
+th.sortable.on.desc::after{content:" ↓";opacity:1}
 .tscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 8px;margin-bottom:16px}
 .chart{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:16px}
 .chart h3{font-size:16px;margin-bottom:8px}
@@ -443,10 +448,26 @@ function renderTutorial(t){
   main.appendChild(body);
   syncInput(); drawBody();
 }
+function sortableTable(rows,cols,init){
+  // cols: [{key,label,get(row)->value for sort,text(row),num:true,left:true}]
+  let sortKey=init.key, dir=init.dir;
+  const wrap=el("div",{class:"tscroll"});
+  function cmp(a,b){ const c=cols.find(x=>x.key===sortKey); let va=c.get(a), vb=c.get(b);
+    const na=va==null||va==="", nb=vb==null||vb===""; if(na&&nb) return 0; if(na) return 1; if(nb) return -1;
+    let r = typeof va==="number"&&typeof vb==="number" ? va-vb : (typeof va==="boolean"&&typeof vb==="boolean" ? (va===vb?0:(va?-1:1)) : String(va).localeCompare(String(vb)));
+    return dir==="asc"?r:-r; }
+  function draw(){
+    const list=rows.slice().sort(cmp);
+    const t=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"})].concat(cols.map(c=>el("th",{class:"sortable"+(c.key===sortKey?" on "+dir:""),style:c.left?"text-align:left":"",onclick:()=>{ if(sortKey===c.key) dir=dir==="asc"?"desc":"asc"; else { sortKey=c.key; dir=c.defaultDir||"asc"; } draw(); }},[c.label]))))]),
+      el("tbody",{},list.map((r,i)=>el("tr",{},[el("td",{text:String(i+1),style:"color:var(--muted)"})].concat(cols.map(c=>el("td",{text:c.text(r),style:c.left?"text-align:left;white-space:normal":""}))))))]);
+    wrap.replaceChildren(t);
+  }
+  draw(); return wrap;
+}
 function tutorialResults(t,ss){
   const rows=ss.map(s=>({s,r:get(s.id)}));
-  const withW=rows.filter(x=>x.r.w!=null&&!isNaN(x.r.w)).sort((a,b)=>a.r.w-b.r.w);
-  const withC=rows.filter(x=>x.r.c!=null).sort((a,b)=>b.r.c-a.r.c||((a.r.w??1e9)-(b.r.w??1e9)));
+  const withW=rows.filter(x=>x.r.w!=null&&!isNaN(x.r.w));
+  const withC=rows.filter(x=>x.r.c!=null);
   const total=withW.reduce((a,x)=>a+x.r.w,0);
   const b1=rows.filter(x=>x.r.b1===true).length, f2=rows.filter(x=>x.r.f2===true).length;
   const wrap=el("div");
@@ -456,17 +477,14 @@ function tutorialResults(t,ss){
     stat(withC.length?fmt(withC.reduce((a,x)=>a+x.r.c,0)/withC.length,1):"–","average creativity"),
     stat(b1+" / "+f2,"carried 1 brick / failed under 2")
   ]));
-  const name=x=>(x.s.first+" "+x.s.last).trim();
-  function ranked(title,list,val,unit){
-    const sec=el("div");
-    sec.appendChild(el("div",{class:"sec",text:title}));
-    if(!list.length){ sec.appendChild(el("div",{class:"empty",text:"Nothing logged yet."})); return sec; }
-    const tbl=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"}),el("th",{text:"Student",style:"text-align:left"}),el("th",{text:unit})])]),
-      el("tbody",{},list.map((x,i)=>el("tr",{},[el("td",{text:String(i+1),style:"text-align:left;color:var(--muted)"}),el("td",{text:name(x),style:"text-align:left;white-space:normal"}),el("td",{text:val(x)})])))]);
-    sec.appendChild(el("div",{class:"tscroll"},[tbl])); return sec;
-  }
-  wrap.appendChild(ranked("Lightest to heaviest",withW,x=>fmt(x.r.w,0),"Weight g"));
-  wrap.appendChild(ranked("Most to least creative",withC,x=>fmt(x.r.c,0)+(x.r.w!=null?"  ·  "+fmt(x.r.w,0)+" g":""),"Score · g"));
+  wrap.appendChild(el("div",{class:"sec",text:"All students · tap a heading to sort"}));
+  wrap.appendChild(sortableTable(rows,[
+    {key:"name",label:"Student",left:true,get:x=>(x.s.first+" "+x.s.last).trim(),text:x=>(x.s.first+" "+x.s.last).trim()},
+    {key:"w",label:"Weight g",get:x=>x.r.w,text:x=>fmt(x.r.w,0)},
+    {key:"c",label:"Creativity",defaultDir:"desc",get:x=>x.r.c,text:x=>fmt(x.r.c,0)},
+    {key:"b1",label:"Carried 1 brick",get:x=>x.r.b1,text:x=>yn(x.r.b1)},
+    {key:"f2",label:"Failed <2",get:x=>x.r.f2,text:x=>yn(x.r.f2)}
+  ],{key:"w",dir:"asc"}));
   return wrap;
 }
 function studentCard(s,i,onChange){
@@ -509,15 +527,15 @@ function renderCompare(){
   main.appendChild(el("div",{class:"stats"},[
     stat(logged.length+" / "+allStudents().length,"models logged"),
     stat(ws.length?kg(ws.reduce((a,b)=>a+b,0))+" kg":"–","total weight"),
-    stat(ws.length?kg(ws.reduce((a,b)=>a+b,0)/ws.length)+" kg":"–","average weight"),
+    stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0)/ws.length,0)+" g":"–","average weight"),
     stat(cs.length?fmt(cs.reduce((a,b)=>a+b,0)/cs.length,1):"–","average creativity"),
     stat(b1.length?fmt(100*b1.filter(r=>r.b1).length/b1.length,0)+"%":"–","carried 1 brick"),
     stat(f2.length?fmt(100*f2.filter(r=>r.f2).length/f2.length,0)+"%":"–","failed under 2")
   ]));
   const rows=allStudents().map(s=>({s,r:get(s.id)}));
   function modelTable(title,list){
-    const t=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"}),el("th",{text:"Model",style:"text-align:left"}),el("th",{text:"Tutorial",style:"text-align:left"}),el("th",{text:"Weight kg"}),el("th",{text:"Creativity"}),el("th",{text:"Carried 1 brick"}),el("th",{text:"Failed <2"})])]),
-      el("tbody",{},list.map((x,i)=>el("tr",{},[el("td",{text:String(i+1),style:"color:var(--muted)"}),el("td",{text:(x.s.first+" "+x.s.last).trim(),style:"text-align:left"}),el("td",{text:x.s.tutor,style:"text-align:left"}),el("td",{text:kg(x.r.w)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:yn(x.r.b1)}),el("td",{text:yn(x.r.f2)})])))]);
+    const t=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"}),el("th",{text:"Model",style:"text-align:left"}),el("th",{text:"Tutorial",style:"text-align:left"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"}),el("th",{text:"Carried 1 brick"}),el("th",{text:"Failed <2"})])]),
+      el("tbody",{},list.map((x,i)=>el("tr",{},[el("td",{text:String(i+1),style:"color:var(--muted)"}),el("td",{text:(x.s.first+" "+x.s.last).trim(),style:"text-align:left"}),el("td",{text:x.s.tutor,style:"text-align:left"}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:yn(x.r.b1)}),el("td",{text:yn(x.r.f2)})])))]);
     main.appendChild(el("div",{class:"sec",text:title}));
     if(!list.length) main.appendChild(el("div",{class:"empty",text:"Nothing logged yet."}));
     else main.appendChild(el("div",{class:"tscroll"},[t]));
@@ -525,11 +543,11 @@ function renderCompare(){
   modelTable("Lightest models that carried a brick",rows.filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,20));
   modelTable("Most to least creative models",rows.filter(x=>x.r.c!=null).sort((a,b)=>b.r.c-a.r.c||((a.r.w??1e9)-(b.r.w??1e9))).slice(0,20));
   main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
-  main.appendChild(barChart("Average model weight (kg)",ms.map(m=>({l:m.tutor,v:m.avgW,s:kg(m.avgW)+" kg"}))));
+  main.appendChild(barChart("Average model weight (g)",ms.map(m=>({l:m.tutor,v:m.avgW,s:fmt(m.avgW,0)+" g"}))));
   main.appendChild(barChart("Carried 1 brick (% of tested)",ms.map(m=>({l:m.tutor,v:m.pB1,s:fmt(m.pB1,0)+"%"})),100));
   main.appendChild(barChart("Average creativity (0–10)",ms.map(m=>({l:m.tutor,v:m.avgC,s:fmt(m.avgC,1)})),10));
-  const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg kg","Min kg","Max kg","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
-    el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:kg(m.avgW)}),el("td",{text:kg(m.minW)}),el("td",{text:kg(m.maxW)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
+  const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg g","Min g","Max g","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
+    el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:fmt(m.avgW,0)}),el("td",{text:fmt(m.minW,0)}),el("td",{text:fmt(m.maxW,0)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
   main.appendChild(el("div",{class:"tscroll"},[tbl]));
   main.appendChild(el("div",{class:"toolbar"},[el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"])]));
 }
