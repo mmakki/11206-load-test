@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>11206 Load Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: phone-first single column; sticky header; cards per student; brick-red accent for the load test. */
+:root{
+  --bg:#f3f1ec; --panel:#ffffff; --ink:#1c1a17; --muted:#6b655c; --line:#d9d4ca;
+  --accent:#b2452b; --accent-ink:#ffffff; --good:#2f7a4f; --bad:#a63a2e; --soft:#ede7dc;
+  --display:"Barlow Semi Condensed","Arial Narrow",sans-serif; --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#17160f; --panel:#221f1a; --ink:#f0ebe2; --muted:#a39b8e; --line:#3b362e;
+  --accent:#d8603f; --accent-ink:#1a110d; --good:#6cc08f; --bad:#e37c6a; --soft:#2c2822; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#17160f; --panel:#221f1a; --ink:#f0ebe2; --muted:#a39b8e; --line:#3b362e;
+  --accent:#d8603f; --accent-ink:#1a110d; --good:#6cc08f; --bad:#e37c6a; --soft:#2c2822; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4}
+body{padding-bottom:env(safe-area-inset-bottom,0px)}
+h1,h2,h3{font-family:var(--display);margin:0;line-height:1.1;text-wrap:balance}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit}
+.hdr{position:sticky;top:0;z-index:5;background:var(--ink);color:var(--bg);
+  padding:calc(10px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  display:flex;align-items:center;gap:12px}
+.hdr .back{font-size:22px;line-height:1;padding:4px 8px;margin-left:-8px;border-radius:6px}
+.hdr .title{flex:1;min-width:0}
+.hdr .title h1{font-size:22px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr .title small{display:block;font-size:12px;opacity:.75;letter-spacing:.06em;text-transform:uppercase}
+.hdr .act{background:var(--accent);color:var(--accent-ink);font-weight:600;padding:8px 12px;border-radius:6px;font-size:14px}
+.sync{display:inline-flex;align-items:center;gap:5px;font-size:11px;opacity:.8;letter-spacing:.04em;text-transform:none}
+.sync::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sync.ok::before{background:var(--good)} .sync.busy::before{background:#e0a92b} .sync.off::before{background:var(--bad)}
+.field input[type=text],.field input[type=password]{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+main{padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px));max-width:720px;margin:0 auto}
+.notice{background:var(--soft);border-left:4px solid var(--accent);padding:10px 12px;border-radius:4px;font-size:14px;margin-bottom:16px}
+.notice.err{border-color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 12px;text-align:left;display:flex;flex-direction:column;gap:6px;min-width:0}
+.tile:active{background:var(--soft)}
+.tile .n{font-family:var(--display);font-size:22px;font-weight:700}
+.tile .p{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tile .bar{height:4px;background:var(--soft);border-radius:2px;overflow:hidden}
+.tile .bar i{display:block;height:100%;background:var(--accent)}
+.tile.wide{grid-column:1/-1;background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tile.wide .p{color:inherit;opacity:.75}
+.sec{margin:22px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-family:var(--body);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;display:grid;gap:12px}
+.card.done{border-left:4px solid var(--good)}
+.card .name{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card .name h3{font-size:20px}
+.card .name .idx{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field label{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;font-weight:600}
+.field input[type=number]{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums}
+.field input[type=number]:focus{outline:2px solid var(--accent);outline-offset:1px}
+.slider{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.slider output{font-family:var(--display);font-size:26px;font-weight:700;min-width:2ch;text-align:right;font-variant-numeric:tabular-nums}
+.slider output.unset{color:var(--muted);font-size:14px;font-family:var(--body);font-weight:400}
+input[type=range]{width:100%;accent-color:var(--accent);height:32px;margin:0}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{padding:10px 4px;font-weight:600;font-size:15px;background:var(--bg)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on.yes{background:var(--good);color:#fff}
+.seg button.on.no{background:var(--bad);color:#fff}
+.seg button:focus-visible,.tile:focus-visible,.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.stat b{display:block;font-family:var(--display);font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.tscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 8px;margin-bottom:16px}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:16px}
+.chart h3{font-size:16px;margin-bottom:8px}
+.bars{display:grid;gap:6px}
+.bar-row{display:grid;grid-template-columns:76px 1fr 56px;align-items:center;gap:8px;font-size:14px}
+.bar-row .b{height:18px;background:var(--soft);border-radius:3px;overflow:hidden}
+.bar-row .b i{display:block;height:100%;background:var(--accent)}
+.bar-row .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.btn{border:1px solid var(--line);background:var(--panel);padding:10px 14px;border-radius:6px;font-weight:600;font-size:14px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad)}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:6px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.confirm{display:grid;gap:8px;background:var(--soft);padding:12px;border-radius:6px;margin-bottom:16px}
+@media (prefers-reduced-motion: reduce){ .toast{transition:none} }
+</style>
+</head>
+<body>
+<header class="hdr" id="hdr"></header>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<input type="file" id="rosterFile" class="hidden-input" accept=".xlsx,.xls,.csv">
+<input type="file" id="importFile" class="hidden-input" accept=".xlsx" multiple>
+
+<script>
+(function(){
+const TUTORIALS=["Lucy","Herman","Kamyar","Vanessa","Annabel","Aman","Daniel","Mitchell","Fernando","Michelle","Sarah"];
+const ROSTER_URL="students.xlsx";
+const KEY_RESULTS="ics11206.results.v1", KEY_ROSTER="ics11206.roster.v1";
+
+let roster=[];      // {id, first, last, tutor}
+let results={};     // id -> {w, c, b1, f2, ts}
+let rosterError="";
+let unmatched=0;
+
+const $=s=>document.querySelector(s);
+const hdr=$("#hdr"), main=$("#main");
+
+/* ---------- storage ---------- */
+function load(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(e){ return fb; } }
+function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+results=load(KEY_RESULTS,{});
+roster=load(KEY_ROSTER,[]);
+
+/* ---------- roster ---------- */
+function norm(s){ return String(s==null?"":s).trim(); }
+function makeId(first,last,tutor){ return (tutor+"|"+first+"|"+last).toLowerCase().replace(/\s+/g," "); }
+function parseRosterWorkbook(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+  if(!rows.length) throw new Error("The spreadsheet is empty.");
+  let ci={first:0,last:1,tutor:2};
+  const head=rows[0].map(h=>String(h).toLowerCase());
+  const fi=head.findIndex(h=>h.includes("first")), li=head.findIndex(h=>h.includes("last")||h.includes("surname")), ti=head.findIndex(h=>h.includes("tutor"));
+  let start=0;
+  if(fi>=0&&li>=0&&ti>=0){ ci={first:fi,last:li,tutor:ti}; start=1; }
+  else if(head.some(h=>/first|last|tutor|name/.test(h))) start=1;
+  const tmap=new Map(TUTORIALS.map(t=>[t.toLowerCase(),t]));
+  const out=[]; unmatched=0;
+  for(let r=start;r<rows.length;r++){
+    const first=norm(rows[r][ci.first]), last=norm(rows[r][ci.last]), traw=norm(rows[r][ci.tutor]);
+    if(!first&&!last) continue;
+    const tutor=tmap.get(traw.toLowerCase());
+    if(!tutor){ unmatched++; continue; }
+    out.push({id:makeId(first,last,tutor),first,last,tutor});
+  }
+  if(!out.length) throw new Error("No rows matched. Check the tutor column uses the tutor names exactly.");
+  return out;
+}
+async function fetchRoster(){
+  try{
+    const res=await fetch(ROSTER_URL+"?v="+Date.now(),{cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const buf=await res.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array"});
+    roster=parseRosterWorkbook(wb); save(KEY_ROSTER,roster); rosterError="";
+  }catch(e){
+    rosterError = roster.length ? "" : "Could not load students.xlsx ("+e.message+"). Upload it below or put it next to index.html.";
+  }
+  render();
+}
+$("#rosterFile").addEventListener("change",async ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  try{ const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}); roster=parseRosterWorkbook(wb); save(KEY_ROSTER,roster); rosterError=""; toast("Roster loaded: "+roster.length+" students"); }
+  catch(e){ rosterError="Could not read that file: "+e.message; }
+  ev.target.value=""; render();
+});
+
+/* ---------- results ---------- */
+function get(id){ return results[id]||{}; }
+function set(id,patch){ results[id]=Object.assign({},get(id),patch,{ts:Date.now()}); save(KEY_RESULTS,results); queuePush(id); }
+
+/* ---------- live sync (api/results.js + Upstash Redis) ---------- */
+const API="api/results", KEY_PENDING="ics11206.pending.v1";
+let syncState="busy", syncMsg="connecting", pending=load(KEY_PENDING,{}), pushTimer=null, pollTimer=null, apiAvailable=true;
+function setSync(st,msg){ syncState=st; syncMsg=msg; const e=hdr.querySelector(".sync"); if(e){ e.className="sync "+st; e.textContent=msg; } }
+function mergeIn(remote){ let changed=false;
+  for(const id in remote){ const r=remote[id], cur=get(id); if(!cur.ts||(r&&r.ts>=cur.ts&&!pending[id])){ if(JSON.stringify(cur)!==JSON.stringify(r)){ results[id]=r; changed=true; } } }
+  if(changed) save(KEY_RESULTS,results); return changed; }
+async function pull(){
+  if(!apiAvailable) return;
+  try{ const res=await fetch(API,{cache:"no-store"}); if(res.status===404){ apiAvailable=false; setSync("off","no sync (static)"); return; }
+    const j=await res.json(); if(!j.ok) throw new Error(j.error||"error");
+    // records deleted on the server disappear locally too (unless we still have a pending write)
+    for(const id in results){ if(!(id in j.results)&&!pending[id]&&results[id].ts&&results[id].ts<Date.now()-15000){ delete results[id]; } }
+    const changed=mergeIn(j.results); save(KEY_RESULTS,results);
+    if(!Object.keys(pending).length) setSync("ok","live");
+    if(changed&&!document.activeElement.matches("input")) render();
+  }catch(e){ setSync("off","offline, saved on phone"); }
+}
+function queuePush(id){ pending[id]=true; save(KEY_PENDING,pending); setSync("busy","saving"); clearTimeout(pushTimer); pushTimer=setTimeout(flush,500); }
+async function flush(){
+  if(!apiAvailable){ pending={}; save(KEY_PENDING,pending); setSync("off","no sync (static)"); return; }
+  const ids=Object.keys(pending); if(!ids.length){ setSync("ok","live"); return; }
+  const records={}; ids.forEach(id=>records[id]=get(id));
+  try{ const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({records})});
+    const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"save failed");
+    ids.forEach(id=>delete pending[id]); save(KEY_PENDING,pending); setSync("ok","live");
+  }catch(e){ setSync("off","offline, will retry"); setTimeout(flush,5000); }
+}
+function startPolling(){ clearInterval(pollTimer); const r=route(); const every=r.page==="compare"?8000:30000; pollTimer=setInterval(()=>{ if(document.visibilityState==="visible") pull(); },every); }
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ pull(); flush(); } });
+window.addEventListener("online",()=>{ pull(); flush(); });
+async function resetShared(key){
+  try{ const res=await fetch(API,{method:"DELETE",headers:{"x-admin-key":key}}); const j=await res.json(); if(!res.ok||!j.ok) throw new Error(j.error||"refused");
+    results={}; pending={}; save(KEY_RESULTS,results); save(KEY_PENDING,pending); toast("Shared data reset"); render(); }
+  catch(e){ toast("Reset refused: "+e.message); }
+}
+function isLogged(r){ return r&&(r.w!=null||r.c!=null||r.b1!=null||r.f2!=null); }
+function studentsOf(t){ return roster.filter(s=>s.tutor===t); }
+function fmt(n,d){ return n==null||isNaN(n)?"–":Number(n).toFixed(d==null?0:d); }
+function summary(t){
+  const ss=studentsOf(t), rs=ss.map(s=>get(s.id));
+  const logged=rs.filter(isLogged);
+  const ws=rs.map(r=>r.w).filter(v=>v!=null&&!isNaN(v));
+  const cs=rs.map(r=>r.c).filter(v=>v!=null);
+  const b1=rs.filter(r=>r.b1!=null), f2=rs.filter(r=>r.f2!=null);
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  return {tutor:t,n:ss.length,logged:logged.length,avgW:avg(ws),minW:ws.length?Math.min(...ws):null,maxW:ws.length?Math.max(...ws):null,
+    avgC:avg(cs),pB1:b1.length?100*b1.filter(r=>r.b1===true).length/b1.length:null,pF2:f2.length?100*f2.filter(r=>r.f2===true).length/f2.length:null,
+    nB1:b1.filter(r=>r.b1===true).length,nF2:f2.filter(r=>r.f2===true).length};
+}
+
+/* ---------- export / import ---------- */
+function exportXlsx(){
+  const rows=[["Tutorial","First name","Last name","Weight (g)","Creativity (0-10)","Carried 1 brick","Failed under 2 bricks","Last updated"]];
+  TUTORIALS.forEach(t=>studentsOf(t).forEach(s=>{ const r=get(s.id);
+    rows.push([t,s.first,s.last,r.w??"",r.c??"",r.b1==null?"":(r.b1?"Yes":"No"),r.f2==null?"":(r.f2?"Yes":"No"),r.ts?new Date(r.ts).toLocaleString():""]); }));
+  const sum=[["Tutorial","Students","Logged","Avg weight (g)","Min weight (g)","Max weight (g)","Avg creativity","Carried 1 brick (%)","Failed under 2 (%)"]];
+  TUTORIALS.forEach(t=>{ const m=summary(t); sum.push([t,m.n,m.logged,r1(m.avgW),m.minW??"",m.maxW??"",r1(m.avgC),r1(m.pB1),r1(m.pF2)]); });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),"Results");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Summary");
+  const d=new Date(), stamp=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  XLSX.writeFile(wb,"11206-load-test-"+stamp+".xlsx");
+}
+function r1(v){ return v==null?"":Math.round(v*10)/10; }
+$("#importFile").addEventListener("change",async ev=>{
+  let merged=0, files=[...ev.target.files];
+  for(const f of files){
+    try{
+      const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
+      const ws=wb.Sheets["Results"]||wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      for(let i=1;i<rows.length;i++){
+        const [t,first,last,w,c,b1,f2,upd]=rows[i];
+        if(!t) continue;
+        const id=makeId(norm(first),norm(last),norm(t));
+        const inc={w:w===""?null:Number(w),c:c===""?null:Number(c),b1:b1===""?null:String(b1).toLowerCase()==="yes",f2:f2===""?null:String(f2).toLowerCase()==="yes"};
+        if(!isLogged(inc)) continue;
+        const ts=upd?Date.parse(upd)||Date.now():Date.now();
+        const cur=get(id);
+        if(!cur.ts||ts>=cur.ts){ results[id]=Object.assign(inc,{ts}); pending[id]=true; merged++; }
+        if(!roster.find(s=>s.id===id)&&TUTORIALS.includes(t)){ roster.push({id,first:norm(first),last:norm(last),tutor:t}); }
+      }
+    }catch(e){ toast("Could not read "+f.name); }
+  }
+  save(KEY_RESULTS,results); save(KEY_ROSTER,roster); save(KEY_PENDING,pending); flush();
+  toast("Merged "+merged+" records from "+files.length+" file"+(files.length===1?"":"s"));
+  ev.target.value=""; render();
+});
+
+/* ---------- routing ---------- */
+function route(){ const h=decodeURIComponent(location.hash.replace("#","")); if(h==="compare") return {page:"compare"}; if(TUTORIALS.includes(h)) return {page:"tutorial",tutor:h}; return {page:"home"}; }
+window.addEventListener("hashchange",render);
+
+function el(tag,attrs,children){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ if(k==="class") e.className=attrs[k]; else if(k==="text") e.textContent=attrs[k]; else if(k.startsWith("on")) e.addEventListener(k.slice(2),attrs[k]); else e.setAttribute(k,attrs[k]); } (children||[]).forEach(c=>c&&e.appendChild(typeof c==="string"?document.createTextNode(c):c)); return e; }
+function header(title,sub,back,action){
+  hdr.replaceChildren();
+  if(back) hdr.appendChild(el("button",{class:"back","aria-label":"Back",onclick:()=>{location.hash="";}},["‹"]));
+  hdr.appendChild(el("div",{class:"title"},[el("h1",{text:title}),el("small",{},[sub+" · ",el("span",{class:"sync "+syncState,text:syncMsg})])]));
+  if(action) hdr.appendChild(el("button",{class:"act",onclick:action.fn},[action.label]));
+}
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2200); }
+
+/* ---------- pages ---------- */
+function render(){
+  const r=route();
+  if(r.page==="tutorial") renderTutorial(r.tutor); else if(r.page==="compare") renderCompare(); else renderHome();
+  if(render._last!==location.hash){ render._last=location.hash; window.scrollTo(0,0); pull(); startPolling(); }
+}
+function rosterNotice(){
+  const out=[];
+  if(rosterError) out.push(el("div",{class:"notice err"},[rosterError+" ",el("button",{class:"btn",onclick:()=>$("#rosterFile").click()},["Upload students.xlsx"])]));
+  else if(!roster.length) out.push(el("div",{class:"notice"},["Loading student list…"]));
+  if(unmatched) out.push(el("div",{class:"notice"},[unmatched+" row"+(unmatched===1?"":"s")+" in students.xlsx had a tutor name that didn't match and were skipped."]));
+  return out;
+}
+function renderHome(){
+  header("11206 Load Test","Introduction to Construction & Structural Synthesis",false,{label:"Export",fn:exportXlsx});
+  main.replaceChildren(...rosterNotice());
+  const total=roster.length, logged=roster.filter(s=>isLogged(get(s.id))).length;
+  const grid=el("div",{class:"grid"});
+  grid.appendChild(el("button",{class:"tile wide",onclick:()=>{location.hash="compare";}},[el("div",{class:"n",text:"Compare all tutorials"}),el("div",{class:"p",text:logged+" of "+total+" models logged"})]));
+  TUTORIALS.forEach(t=>{ const m=summary(t); const pct=m.n?100*m.logged/m.n:0;
+    grid.appendChild(el("button",{class:"tile",onclick:()=>{location.hash=encodeURIComponent(t);}},[el("div",{class:"n",text:t}),el("div",{class:"p",text:m.logged+" / "+m.n+" logged"}),el("div",{class:"bar"},[el("i",{style:"width:"+pct+"%"})])]));
+  });
+  main.appendChild(el("div",{class:"sec",text:"Tutorials"}));
+  main.appendChild(grid);
+  main.appendChild(el("div",{class:"sec",text:"Data"}));
+  main.appendChild(el("div",{class:"toolbar"},[
+    el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"]),
+    el("button",{class:"btn",onclick:()=>$("#importFile").click()},["Import results files"]),
+    el("button",{class:"btn",onclick:()=>$("#rosterFile").click()},["Reload student list"]),
+    el("button",{class:"btn danger",onclick:confirmClear},["Reset all shared data"])
+  ]));
+  main.appendChild(el("p",{style:"font-size:13px;color:var(--muted)"},[apiAvailable?"Entries sync live to everyone with this link. If the phone goes offline, they're kept locally and sent when it reconnects.":"This copy is running without the sync API, so results stay on this phone. Export and import files to combine them."]));
+}
+function confirmClear(){
+  const keyIn=el("input",{type:"password",placeholder:"Admin key",autocomplete:"off",id:"adminKey"});
+  const box=el("div",{class:"confirm"},["This wipes every tutorial's results for everyone. Export first. Enter the admin key to confirm.",
+    el("div",{class:"field"},[keyIn]),
+    el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn danger",onclick:()=>resetShared(keyIn.value)},["Yes, reset everything"]),el("button",{class:"btn",onclick:render},["Cancel"])])]);
+  main.insertBefore(box,main.firstChild); keyIn.focus();
+}
+function renderTutorial(t){
+  const ss=studentsOf(t), logged=ss.filter(s=>isLogged(get(s.id))).length;
+  header(t+"'s tutorial",logged+" of "+ss.length+" logged",true,{label:"Export",fn:exportXlsx});
+  main.replaceChildren(...rosterNotice());
+  if(!ss.length&&roster.length) main.appendChild(el("div",{class:"notice"},["No students listed for "+t+" in students.xlsx."]));
+  ss.forEach((s,i)=>main.appendChild(studentCard(s,i+1)));
+}
+function studentCard(s,i){
+  const r=get(s.id);
+  const card=el("div",{class:"card"+(isLogged(r)?" done":"")});
+  card.appendChild(el("div",{class:"name"},[el("h3",{text:s.first+" "+s.last}),el("span",{class:"idx",text:"#"+i})]));
+  // weight + creativity
+  const wIn=el("input",{type:"number",inputmode:"decimal",step:"1",min:"0",placeholder:"grams",id:"w-"+cssId(s.id)});
+  if(r.w!=null) wIn.value=r.w;
+  wIn.addEventListener("input",()=>{ const v=wIn.value===""?null:Number(wIn.value); set(s.id,{w:v}); mark(); });
+  const out=el("output",{class:r.c==null?"unset":""},[r.c==null?"not set":String(r.c)]);
+  const sl=el("input",{type:"range",min:"0",max:"10",step:"1",id:"c-"+cssId(s.id),"aria-label":"Creativity"});
+  sl.value=r.c==null?0:r.c;
+  sl.addEventListener("input",()=>{ set(s.id,{c:Number(sl.value)}); out.textContent=sl.value; out.className=""; mark(); });
+  card.appendChild(el("div",{class:"field"},[el("label",{text:"Model weight"}),wIn]));
+  card.appendChild(el("div",{class:"field"},[el("label",{text:"Creativity 0–10"}),el("div",{class:"slider"},[sl,out])]));
+  // yes / no
+  card.appendChild(el("div",{class:"row"},[segField(s.id,"b1","Carried 1 brick",r.b1,mark),segField(s.id,"f2","Failed under 2 bricks",r.f2,mark)]));
+  function mark(){ card.classList.toggle("done",isLogged(get(s.id))); const n=studentsOf(s.tutor).filter(x=>isLogged(get(x.id))).length; hdr.querySelector("small").firstChild.textContent=n+" of "+studentsOf(s.tutor).length+" logged · "; }
+  return card;
+}
+function cssId(id){ return id.replace(/[^a-z0-9]+/gi,"-"); }
+function segField(id,key,label,val,after){
+  const y=el("button",{class:"yes"+(val===true?" on":""),type:"button"},["Yes"]), n=el("button",{class:"no"+(val===false?" on":""),type:"button"},["No"]);
+  function setv(v){ const cur=get(id)[key]; const nv=cur===v?null:v; set(id,{[key]:nv}); y.classList.toggle("on",nv===true); n.classList.toggle("on",nv===false); after(); }
+  y.addEventListener("click",()=>setv(true)); n.addEventListener("click",()=>setv(false));
+  return el("div",{class:"field"},[el("label",{text:label}),el("div",{class:"seg",role:"group","aria-label":label},[y,n])]);
+}
+function renderCompare(){
+  header("All tutorials","Comparison",true,{label:"Export",fn:exportXlsx});
+  main.replaceChildren(...rosterNotice());
+  const ms=TUTORIALS.map(summary);
+  const all=roster.map(s=>get(s.id)), logged=all.filter(isLogged);
+  const ws=all.map(r=>r.w).filter(v=>v!=null&&!isNaN(v));
+  const b1=all.filter(r=>r.b1!=null), f2=all.filter(r=>r.f2!=null);
+  main.appendChild(el("div",{class:"stats"},[
+    stat(logged.length+" / "+roster.length,"models logged"),
+    stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0)/ws.length,0)+" g":"–","average weight"),
+    stat(b1.length?fmt(100*b1.filter(r=>r.b1).length/b1.length,0)+"%":"–","carried 1 brick"),
+    stat(f2.length?fmt(100*f2.filter(r=>r.f2).length/f2.length,0)+"%":"–","failed under 2")
+  ]));
+  main.appendChild(barChart("Average model weight (g)",ms.map(m=>({l:m.tutor,v:m.avgW,s:fmt(m.avgW,0)+" g"}))));
+  main.appendChild(barChart("Carried 1 brick (% of tested)",ms.map(m=>({l:m.tutor,v:m.pB1,s:fmt(m.pB1,0)+"%"})),100));
+  main.appendChild(barChart("Average creativity (0–10)",ms.map(m=>({l:m.tutor,v:m.avgC,s:fmt(m.avgC,1)})),10));
+  const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg g","Min g","Max g","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
+    el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:fmt(m.avgW,0)}),el("td",{text:fmt(m.minW,0)}),el("td",{text:fmt(m.maxW,0)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
+  main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
+  main.appendChild(el("div",{class:"tscroll"},[tbl]));
+  // lightest models that carried one brick
+  const champs=roster.map(s=>({s,r:get(s.id)})).filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
+  if(champs.length){
+    main.appendChild(el("div",{class:"sec",text:"Lightest models that carried a brick"}));
+    const t2=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"Model"}),el("th",{text:"Tutorial"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"}),el("th",{text:"Survived 2"})])]),
+      el("tbody",{},champs.map(x=>el("tr",{},[el("td",{text:x.s.first+" "+x.s.last}),el("td",{text:x.s.tutor}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:x.r.f2==null?"–":(x.r.f2?"No":"Yes")})])))]);
+    main.appendChild(el("div",{class:"tscroll"},[t2]));
+  }
+  main.appendChild(el("div",{class:"toolbar"},[el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"]),el("button",{class:"btn",onclick:()=>$("#importFile").click()},["Import results files"])]));
+}
+function stat(v,l){ return el("div",{class:"stat"},[el("b",{text:v}),el("span",{text:l})]); }
+function barChart(title,items,max){
+  const vals=items.map(i=>i.v).filter(v=>v!=null); const mx=max||(vals.length?Math.max(...vals):1)||1;
+  return el("div",{class:"chart"},[el("h3",{text:title}),el("div",{class:"bars"},items.map(i=>el("div",{class:"bar-row"},[el("span",{text:i.l}),el("div",{class:"b"},[el("i",{style:"width:"+(i.v==null?0:100*i.v/mx)+"%"})]),el("span",{class:"v",text:i.v==null?"–":i.s})])))]);
+}
+
+render();
+fetchRoster();
+if(Object.keys(pending).length) flush();
+})();
+</script>
+</body>
+</html>
