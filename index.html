@@ -348,7 +348,7 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("sh
 /* ---------- pages ---------- */
 function render(){
   const r=route(), navigated=render._last!==location.hash;
-  if(navigated){ render._last=location.hash; view.sel=null; view.q=""; }
+  if(navigated){ render._last=location.hash; view.sel=null; view.q=""; view.results=false; }
   if(r.page==="tutorial") renderTutorial(r.tutor); else if(r.page==="compare") renderCompare(); else renderHome();
   if(navigated){ window.scrollTo(0,0); pull(); startPolling(); }
 }
@@ -385,7 +385,7 @@ function confirmClear(){
     el("div",{class:"toolbar",style:"margin:0"},[el("button",{class:"btn danger",onclick:()=>resetShared(keyIn.value)},["Yes, reset everything"]),el("button",{class:"btn",onclick:render},["Cancel"])])]);
   main.insertBefore(box,main.firstChild); keyIn.focus();
 }
-const view={sel:null,q:""};
+const view={sel:null,q:"",results:false};
 function renderTutorial(t){
   const ss=studentsOf(t).slice().sort((a,b)=>(a.first+" "+a.last).localeCompare(b.first+" "+b.last));
   const logged=ss.filter(s=>isDone(get(s.id))).length;
@@ -410,9 +410,15 @@ function renderTutorial(t){
     if(!list.length) dd.appendChild(el("button",{type:"button",disabled:"",style:"color:var(--muted)"},["No one matches"]));
     dd.hidden=false; }
   function closeDd(){ dd.hidden=true; }
-  function drawMeta(){ const left=ss.length-ss.filter(s=>isDone(get(s.id))).length; meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"})); }
+  function drawMeta(){ const left=ss.length-ss.filter(s=>isDone(get(s.id))).length;
+    const right=el("span",{style:"display:flex;gap:14px"});
+    if(view.results) right.appendChild(el("button",{type:"button",onclick:()=>{view.results=false;drawBody();}},["‹ Back to students"]));
+    else { if(selected()) right.appendChild(el("button",{type:"button",onclick:()=>{view.sel=null;view.q="";syncInput();drawBody();}},["Show all students"]));
+      right.appendChild(el("button",{type:"button",onclick:()=>{view.results=true;closeDd();drawBody();}},["Results"])); }
+    meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"}),right); }
   function drawBody(){
     body.replaceChildren(); drawMeta();
+    if(view.results){ body.appendChild(tutorialResults(t,ss)); return; }
     const s=selected();
     const list=s?[s]:ss.filter(match);
     list.forEach(x=>body.appendChild(studentCard(x,ss.indexOf(x)+1,drawMeta)));
@@ -436,6 +442,32 @@ function renderTutorial(t){
   main.appendChild(el("div",{class:"picker"},[el("div",{class:"searchrow"},[wrap,addBtn]),meta]));
   main.appendChild(body);
   syncInput(); drawBody();
+}
+function tutorialResults(t,ss){
+  const rows=ss.map(s=>({s,r:get(s.id)}));
+  const withW=rows.filter(x=>x.r.w!=null&&!isNaN(x.r.w)).sort((a,b)=>a.r.w-b.r.w);
+  const withC=rows.filter(x=>x.r.c!=null).sort((a,b)=>b.r.c-a.r.c||((a.r.w??1e9)-(b.r.w??1e9)));
+  const total=withW.reduce((a,x)=>a+x.r.w,0);
+  const b1=rows.filter(x=>x.r.b1===true).length, f2=rows.filter(x=>x.r.f2===true).length;
+  const wrap=el("div");
+  wrap.appendChild(el("div",{class:"stats"},[
+    stat(fmt(total,0)+" g","total weight, "+withW.length+" models"),
+    stat(withW.length?fmt(total/withW.length,0)+" g":"–","average weight"),
+    stat(withC.length?fmt(withC.reduce((a,x)=>a+x.r.c,0)/withC.length,1):"–","average creativity"),
+    stat(b1+" / "+f2,"carried 1 brick / failed under 2")
+  ]));
+  const name=x=>(x.s.first+" "+x.s.last).trim();
+  function ranked(title,list,val,unit){
+    const sec=el("div");
+    sec.appendChild(el("div",{class:"sec",text:title}));
+    if(!list.length){ sec.appendChild(el("div",{class:"empty",text:"Nothing logged yet."})); return sec; }
+    const tbl=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"}),el("th",{text:"Student",style:"text-align:left"}),el("th",{text:unit})])]),
+      el("tbody",{},list.map((x,i)=>el("tr",{},[el("td",{text:String(i+1),style:"text-align:left;color:var(--muted)"}),el("td",{text:name(x),style:"text-align:left;white-space:normal"}),el("td",{text:val(x)})])))]);
+    sec.appendChild(el("div",{class:"tscroll"},[tbl])); return sec;
+  }
+  wrap.appendChild(ranked("Lightest to heaviest",withW,x=>fmt(x.r.w,0),"Weight g"));
+  wrap.appendChild(ranked("Most to least creative",withC,x=>fmt(x.r.c,0)+(x.r.w!=null?"  ·  "+fmt(x.r.w,0)+" g":""),"Score · g"));
+  return wrap;
 }
 function studentCard(s,i,onChange){
   const r=get(s.id);
@@ -471,15 +503,32 @@ function renderCompare(){
   const all=allStudents().map(s=>get(s.id)), logged=all.filter(isDone);
   const ws=all.map(r=>r.w).filter(v=>v!=null&&!isNaN(v));
   const b1=all.filter(r=>r.b1!=null), f2=all.filter(r=>r.f2!=null);
+  const cs=all.map(r=>r.c).filter(v=>v!=null);
   main.appendChild(el("div",{class:"stats"},[
     stat(logged.length+" / "+allStudents().length,"models logged"),
+    stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0),0)+" g":"–","total weight"),
     stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0)/ws.length,0)+" g":"–","average weight"),
+    stat(cs.length?fmt(cs.reduce((a,b)=>a+b,0)/cs.length,1):"–","average creativity"),
     stat(b1.length?fmt(100*b1.filter(r=>r.b1).length/b1.length,0)+"%":"–","carried 1 brick"),
     stat(f2.length?fmt(100*f2.filter(r=>r.f2).length/f2.length,0)+"%":"–","failed under 2")
   ]));
   main.appendChild(barChart("Average model weight (g)",ms.map(m=>({l:m.tutor,v:m.avgW,s:fmt(m.avgW,0)+" g"}))));
   main.appendChild(barChart("Carried 1 brick (% of tested)",ms.map(m=>({l:m.tutor,v:m.pB1,s:fmt(m.pB1,0)+"%"})),100));
   main.appendChild(barChart("Average creativity (0–10)",ms.map(m=>({l:m.tutor,v:m.avgC,s:fmt(m.avgC,1)})),10));
+  // failed under two bricks
+  const tested2=all.filter(r=>r.f2!=null), failed2=tested2.filter(r=>r.f2===true);
+  main.appendChild(el("div",{class:"sec",text:"Failed under 2 bricks"}));
+  main.appendChild(el("div",{class:"stats"},[
+    stat(failed2.length+" / "+tested2.length,"failed of models tested at 2"),
+    stat(tested2.length?fmt(100*(tested2.length-failed2.length)/tested2.length,0)+"%":"–","survived 2 bricks")
+  ]));
+  main.appendChild(barChart("Failed under 2 bricks (% of tested)",ms.map(m=>({l:m.tutor,v:m.pF2,s:m.pF2==null?"–":m.nF2+" · "+fmt(m.pF2,0)+"%"})),100));
+  const survivors=allStudents().map(s=>({s,r:get(s.id)})).filter(x=>x.r.f2===false&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
+  if(survivors.length){
+    const t3=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"Lightest models that survived 2 bricks"}),el("th",{text:"Tutorial"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"})])]),
+      el("tbody",{},survivors.map(x=>el("tr",{},[el("td",{text:(x.s.first+" "+x.s.last).trim()}),el("td",{text:x.s.tutor}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)})])))]);
+    main.appendChild(el("div",{class:"tscroll"},[t3]));
+  }
   const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg g","Min g","Max g","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
     el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:fmt(m.avgW,0)}),el("td",{text:fmt(m.minW,0)}),el("td",{text:fmt(m.maxW,0)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
   main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
