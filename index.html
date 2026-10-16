@@ -10,18 +10,18 @@
 <style>
 /* Layout: phone-first single column; sticky header; cards per student; brick-red accent for the load test. */
 :root{
-  --bg:#f3f1ec; --panel:#ffffff; --ink:#1c1a17; --muted:#6b655c; --line:#d9d4ca;
-  --accent:#b2452b; --accent-ink:#ffffff; --good:#2f7a4f; --bad:#a63a2e; --soft:#ede7dc;
+  --bg:#eef2f5; --panel:#ffffff; --ink:#15202b; --muted:#5c6b78; --line:#cfd8e0;
+  --accent:#1f4e8c; --accent-ink:#ffffff; --good:#2e7d58; --bad:#b23b3b; --soft:#e1e8ef;
   --display:"Barlow Semi Condensed","Arial Narrow",sans-serif; --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --bg:#17160f; --panel:#221f1a; --ink:#f0ebe2; --muted:#a39b8e; --line:#3b362e;
-  --accent:#d8603f; --accent-ink:#1a110d; --good:#6cc08f; --bad:#e37c6a; --soft:#2c2822; color-scheme:dark;
+  --bg:#0f161c; --panel:#182129; --ink:#e6edf3; --muted:#95a4b2; --line:#2b3845;
+  --accent:#6fa3e6; --accent-ink:#0b1521; --good:#6cc39a; --bad:#e57c7c; --soft:#223040; color-scheme:dark;
 }}
 :root[data-theme="dark"]{
-  --bg:#17160f; --panel:#221f1a; --ink:#f0ebe2; --muted:#a39b8e; --line:#3b362e;
-  --accent:#d8603f; --accent-ink:#1a110d; --good:#6cc08f; --bad:#e37c6a; --soft:#2c2822; color-scheme:dark;
+  --bg:#0f161c; --panel:#182129; --ink:#e6edf3; --muted:#95a4b2; --line:#2b3845;
+  --accent:#6fa3e6; --accent-ink:#0b1521; --good:#6cc39a; --bad:#e57c7c; --soft:#223040; color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4}
@@ -55,8 +55,8 @@ main{padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(saf
 .tile.wide .p{color:inherit;opacity:.75}
 .sec{margin:22px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-family:var(--body);font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;display:grid;gap:12px}
-.card.done{background:color-mix(in srgb,var(--good) 12%,var(--panel));border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
-@supports not (background:color-mix(in srgb,red 10%,white)){ .card.done{background:#e9f4ec;border-color:#9ccfae} :root[data-theme="dark"] .card.done{background:#1f2e24} }
+.card.done{background:color-mix(in srgb,var(--good) 24%,var(--panel));border-color:color-mix(in srgb,var(--good) 70%,var(--line))}
+@supports not (background:color-mix(in srgb,red 10%,white)){ .card.done{background:#d2e9db;border-color:#5fa882} :root[data-theme="dark"] .card.done{background:#22402f} }
 .card .name{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .card .name h3{font-size:20px}
 .card .name .idx{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
