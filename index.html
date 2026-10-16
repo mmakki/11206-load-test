@@ -414,7 +414,7 @@ function renderTutorial(t){
     const right=el("span",{style:"display:flex;gap:14px"});
     if(view.results) right.appendChild(el("button",{type:"button",onclick:()=>{view.results=false;drawBody();}},["‹ Back to students"]));
     else { if(selected()) right.appendChild(el("button",{type:"button",onclick:()=>{view.sel=null;view.q="";syncInput();drawBody();}},["Show all students"]));
-      right.appendChild(el("button",{type:"button",onclick:()=>{view.results=true;closeDd();drawBody();}},["Results"])); }
+      right.appendChild(el("button",{type:"button",onclick:()=>{view.results=true;closeDd();drawBody();}},["Summary"])); }
     meta.replaceChildren(el("span",{text:left?left+" still to present":"Everyone logged"}),right); }
   function drawBody(){
     body.replaceChildren(); drawMeta();
@@ -482,7 +482,7 @@ function studentCard(s,i,onChange){
   const sl=el("input",{type:"range",min:"0",max:"10",step:"1",id:"c-"+cssId(s.id),"aria-label":"Creativity"});
   sl.value=r.c==null?0:r.c;
   sl.addEventListener("input",()=>{ set(s.id,{c:Number(sl.value)}); out.textContent=sl.value; out.className=""; mark(); });
-  card.appendChild(el("div",{class:"field"},[el("label",{text:"Model weight"}),wIn]));
+  card.appendChild(el("div",{class:"field"},[el("label",{text:"Model weight (grams)"}),wIn]));
   card.appendChild(el("div",{class:"field"},[el("label",{text:"Creativity 0–10"}),el("div",{class:"slider"},[sl,out])]));
   // yes / no
   card.appendChild(el("div",{class:"row"},[segField(s.id,"b1","Carried 1 brick",r.b1,mark),segField(s.id,"f2","Failed under 2 bricks",r.f2,mark)]));
@@ -496,6 +496,8 @@ function segField(id,key,label,val,after){
   y.addEventListener("click",()=>setv(true)); n.addEventListener("click",()=>setv(false));
   return el("div",{class:"field"},[el("label",{text:label}),el("div",{class:"seg",role:"group","aria-label":label},[y,n])]);
 }
+function kg(g){ return g==null||isNaN(g)?"–":(Number(g)/1000).toFixed(2); }
+function yn(v){ return v==null?"–":(v?"Yes":"No"); }
 function renderCompare(){
   header("All tutorials","Comparison",true,null);
   main.replaceChildren(...rosterNotice());
@@ -506,41 +508,29 @@ function renderCompare(){
   const cs=all.map(r=>r.c).filter(v=>v!=null);
   main.appendChild(el("div",{class:"stats"},[
     stat(logged.length+" / "+allStudents().length,"models logged"),
-    stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0),0)+" g":"–","total weight"),
-    stat(ws.length?fmt(ws.reduce((a,b)=>a+b,0)/ws.length,0)+" g":"–","average weight"),
+    stat(ws.length?kg(ws.reduce((a,b)=>a+b,0))+" kg":"–","total weight"),
+    stat(ws.length?kg(ws.reduce((a,b)=>a+b,0)/ws.length)+" kg":"–","average weight"),
     stat(cs.length?fmt(cs.reduce((a,b)=>a+b,0)/cs.length,1):"–","average creativity"),
     stat(b1.length?fmt(100*b1.filter(r=>r.b1).length/b1.length,0)+"%":"–","carried 1 brick"),
     stat(f2.length?fmt(100*f2.filter(r=>r.f2).length/f2.length,0)+"%":"–","failed under 2")
   ]));
-  main.appendChild(barChart("Average model weight (g)",ms.map(m=>({l:m.tutor,v:m.avgW,s:fmt(m.avgW,0)+" g"}))));
+  const rows=allStudents().map(s=>({s,r:get(s.id)}));
+  function modelTable(title,list){
+    const t=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"#"}),el("th",{text:"Model",style:"text-align:left"}),el("th",{text:"Tutorial",style:"text-align:left"}),el("th",{text:"Weight kg"}),el("th",{text:"Creativity"}),el("th",{text:"Carried 1 brick"}),el("th",{text:"Failed <2"})])]),
+      el("tbody",{},list.map((x,i)=>el("tr",{},[el("td",{text:String(i+1),style:"color:var(--muted)"}),el("td",{text:(x.s.first+" "+x.s.last).trim(),style:"text-align:left"}),el("td",{text:x.s.tutor,style:"text-align:left"}),el("td",{text:kg(x.r.w)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:yn(x.r.b1)}),el("td",{text:yn(x.r.f2)})])))]);
+    main.appendChild(el("div",{class:"sec",text:title}));
+    if(!list.length) main.appendChild(el("div",{class:"empty",text:"Nothing logged yet."}));
+    else main.appendChild(el("div",{class:"tscroll"},[t]));
+  }
+  modelTable("Lightest models that carried a brick",rows.filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,20));
+  modelTable("Most to least creative models",rows.filter(x=>x.r.c!=null).sort((a,b)=>b.r.c-a.r.c||((a.r.w??1e9)-(b.r.w??1e9))).slice(0,20));
+  main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
+  main.appendChild(barChart("Average model weight (kg)",ms.map(m=>({l:m.tutor,v:m.avgW,s:kg(m.avgW)+" kg"}))));
   main.appendChild(barChart("Carried 1 brick (% of tested)",ms.map(m=>({l:m.tutor,v:m.pB1,s:fmt(m.pB1,0)+"%"})),100));
   main.appendChild(barChart("Average creativity (0–10)",ms.map(m=>({l:m.tutor,v:m.avgC,s:fmt(m.avgC,1)})),10));
-  // failed under two bricks
-  const tested2=all.filter(r=>r.f2!=null), failed2=tested2.filter(r=>r.f2===true);
-  main.appendChild(el("div",{class:"sec",text:"Failed under 2 bricks"}));
-  main.appendChild(el("div",{class:"stats"},[
-    stat(failed2.length+" / "+tested2.length,"failed of models tested at 2"),
-    stat(tested2.length?fmt(100*(tested2.length-failed2.length)/tested2.length,0)+"%":"–","survived 2 bricks")
-  ]));
-  main.appendChild(barChart("Failed under 2 bricks (% of tested)",ms.map(m=>({l:m.tutor,v:m.pF2,s:m.pF2==null?"–":m.nF2+" · "+fmt(m.pF2,0)+"%"})),100));
-  const survivors=allStudents().map(s=>({s,r:get(s.id)})).filter(x=>x.r.f2===false&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
-  if(survivors.length){
-    const t3=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"Lightest models that survived 2 bricks"}),el("th",{text:"Tutorial"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"})])]),
-      el("tbody",{},survivors.map(x=>el("tr",{},[el("td",{text:(x.s.first+" "+x.s.last).trim()}),el("td",{text:x.s.tutor}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)})])))]);
-    main.appendChild(el("div",{class:"tscroll"},[t3]));
-  }
-  const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg g","Min g","Max g","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
-    el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:fmt(m.avgW,0)}),el("td",{text:fmt(m.minW,0)}),el("td",{text:fmt(m.maxW,0)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
-  main.appendChild(el("div",{class:"sec",text:"By tutorial"}));
+  const tbl=el("table",{},[el("thead",{},[el("tr",{},["Tutorial","Logged","Avg kg","Min kg","Max kg","Creativity","1 brick","Failed <2"].map(h=>el("th",{text:h})))]),
+    el("tbody",{},ms.map(m=>el("tr",{},[el("td",{text:m.tutor}),el("td",{text:m.logged+"/"+m.n}),el("td",{text:kg(m.avgW)}),el("td",{text:kg(m.minW)}),el("td",{text:kg(m.maxW)}),el("td",{text:fmt(m.avgC,1)}),el("td",{text:m.pB1==null?"–":m.nB1+" ("+fmt(m.pB1,0)+"%)"}),el("td",{text:m.pF2==null?"–":m.nF2+" ("+fmt(m.pF2,0)+"%)"})])))]);
   main.appendChild(el("div",{class:"tscroll"},[tbl]));
-  // lightest models that carried one brick
-  const champs=allStudents().map(s=>({s,r:get(s.id)})).filter(x=>x.r.b1===true&&x.r.w!=null).sort((a,b)=>a.r.w-b.r.w).slice(0,10);
-  if(champs.length){
-    main.appendChild(el("div",{class:"sec",text:"Lightest models that carried a brick"}));
-    const t2=el("table",{},[el("thead",{},[el("tr",{},[el("th",{text:"Model"}),el("th",{text:"Tutorial"}),el("th",{text:"Weight g"}),el("th",{text:"Creativity"}),el("th",{text:"Survived 2"})])]),
-      el("tbody",{},champs.map(x=>el("tr",{},[el("td",{text:x.s.first+" "+x.s.last}),el("td",{text:x.s.tutor}),el("td",{text:fmt(x.r.w,0)}),el("td",{text:fmt(x.r.c,0)}),el("td",{text:x.r.f2==null?"–":(x.r.f2?"No":"Yes")})])))]);
-    main.appendChild(el("div",{class:"tscroll"},[t2]));
-  }
   main.appendChild(el("div",{class:"toolbar"},[el("button",{class:"btn primary",onclick:exportXlsx},["Export to Excel"])]));
 }
 function stat(v,l){ return el("div",{class:"stat"},[el("b",{text:v}),el("span",{text:l})]); }
