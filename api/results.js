@@ -8,6 +8,7 @@
 // DELETE /api/results            -> header x-admin-key must equal ADMIN_KEY env var; wipes everything
 
 const HASH = "ics11206:results";
+const EXTRA = "ics11206:extra-students"; // students added from a tutorial page, missing from students.xlsx
 
 const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -77,14 +78,40 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === "GET") {
-      return res.status(200).json({ ok: true, results: await readAll() });
+      const flat = (await redis("HGETALL", EXTRA)) || [];
+      const extra = [];
+      for (let i = 0; i < flat.length; i += 2) { try { extra.push(JSON.parse(flat[i + 1])); } catch (e) {} }
+      return res.status(200).json({ ok: true, results: await readAll(), extra });
     }
 
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+      if (body.addStudent) {
+        const s = body.addStudent;
+        const first = String(s.first || "").trim().slice(0, 60), last = String(s.last || "").trim().slice(0, 60), tutor = String(s.tutor || "").trim().slice(0, 40);
+        if (!first && !last || !tutor) return res.status(400).json({ ok: false, error: "Name and tutor required" });
+        const id = (tutor + "|" + first + "|" + last).toLowerCase().replace(/\s+/g, " ");
+        await redis("HSET", EXTRA, id, JSON.stringify({ id, first, last, tutor }));
+        return res.status(200).json({ ok: true, id });
+      }
+      if (body.removeStudent) {
+        const id = String(body.removeStudent);
+        await redis("HDEL", EXTRA, id);
+        await redis("HDEL", HASH, id);
+        return res.status(200).json({ ok: true });
+      }
       if (body.records && typeof body.records === "object") {
+        // Ordinary saves arrive in small batches. An Import (body.import === true, or anything
+        // bigger than a batch) can overwrite every tutorial at once, so it needs the admin key.
+        const ids = Object.keys(body.records);
+        if (body.import === true || ids.length > 25) {
+          const key = process.env.ADMIN_KEY;
+          if (!key || req.headers["x-admin-key"] !== key) {
+            return res.status(403).json({ ok: false, error: "Admin key required" });
+          }
+        }
         const out = {};
-        for (const id of Object.keys(body.records).slice(0, 2000)) {
+        for (const id of ids.slice(0, 2000)) {
           out[id] = await upsert(id, body.records[id] || {});
         }
         return res.status(200).json({ ok: true, results: out });
@@ -102,6 +129,7 @@ module.exports = async (req, res) => {
         return res.status(403).json({ ok: false, error: "Admin key required" });
       }
       await redis("DEL", HASH);
+      await redis("DEL", EXTRA);
       return res.status(200).json({ ok: true });
     }
 
